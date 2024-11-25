@@ -21,11 +21,11 @@ object exc2 {
     println("#####################################################")
 
 
-    testWithWord("test",goodEnoughPasswordEith)
-    testWithWord("Test",goodEnoughPasswordEith)
-    testWithWord("Test1",goodEnoughPasswordEith)
-    testWithWord("Test1~",goodEnoughPasswordEith)
-    testWithWord("Test1~AAAAAA",goodEnoughPasswordEith)
+    testWithWord("test",goodEnoughPasswordWithEither)
+    testWithWord("Test",goodEnoughPasswordWithEither)
+    testWithWord("Test1",goodEnoughPasswordWithEither)
+    testWithWord("Test1~",goodEnoughPasswordWithEither)
+    testWithWord("Test1~AAAAAA",goodEnoughPasswordWithEither)
 
     readPasswordAndPrintResult()
   }
@@ -39,15 +39,15 @@ def testWithWord[A](w:String, func : String => A):A = {
   res
 }
 
-def goodEnoughPasswordEith(password:String):Either[String,Boolean] = {
-  def AtLeastOneChar(s:String,mustContainCharString:String,error:String) :Either[String,Boolean] = {
+def goodEnoughPasswordWithEither(password:String):Either[String,String] = {
+  def AtLeastOneChar(s:String,mustContainCharString:String,error:String) :Either[String,String] = {
     if (mustContainCharString.exists( m =>
       s.contains(m)
-    )) Right(true) else Left(error)
+    )) Right(s) else Left(error)
   }
 
-  def check(s : Seq[() => Either[String,Boolean]]) : Either[String,Boolean] = {
-    if (s.isEmpty) return Right(true)
+  def check(s : Seq[() => Either[String,String]]) : Either[String,String] = {
+    if (s.isEmpty) return Right(password)
 
     s.head() match {
       case Left(error) => Left(error)
@@ -55,12 +55,12 @@ def goodEnoughPasswordEith(password:String):Either[String,Boolean] = {
     }
   }
 
-  var chain = Seq[() => Either[String,Boolean]]()
+  var chain = Seq[() => Either[String,String]]()
   chain = chain.appended(() => AtLeastOneChar(password,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","Need uppercase character"))
   chain = chain.appended(() => AtLeastOneChar(password,"abcdefghijklmnopqrstuvwxyz","Need lowercase character"))
   chain = chain.appended(() => AtLeastOneChar(password,"1234567890","Need digit"))
   chain = chain.appended(() => AtLeastOneChar(password,"!@#$%^&*()_+=`~;./][{}/\\?|\"","Need special character"))
-  chain = chain.appended(() => if (password.length >= 8) Right(true) else Left("Password must contain at least 8 characters"))
+  chain = chain.appended(() => if (password.length >= 8) Right(password) else Left("Password must contain at least 8 characters"))
 
   check(chain)
 }
@@ -74,16 +74,14 @@ def readPasswordAndPrintResult() = {
     }
   }
 
-  val f = readPassword()
-  val resultTry = Await.ready(f,Duration.Inf).value.get
-  val resultString = decipherResult(resultTry)
-  println(resultString)
+  val result = decipherResult(Await.ready(readPassword(),Duration.Inf).value.get)
+  println(result)
 }
 
 def readPassword():Future[String] = {
   var password : String = ""
 
-  def resultToString(e : Either[String,Boolean]) : String = {
+  def resultToString(e : Either[String,String]) : String = {
     e match {
       case Left(x) => x
       case Right(x) => password
@@ -92,11 +90,9 @@ def readPassword():Future[String] = {
   println("Enter your password")
   password = StdIn.readLine()
 
-  var f : Future[String] = Future(resultToString(goodEnoughPasswordEith(password)))(global)
+  var f : Future[String] = Future(resultToString(goodEnoughPasswordWithEither(password)))(global)
 
-  while(!f.isCompleted) {
-    Thread.sleep(10)
-  }
+  f.onComplete((f) => f)(global)
 
   f
 }
@@ -109,10 +105,14 @@ def goodEnoughPassword(password:String):Boolean = {
     )) true else false
   }
 
-  atLeastOneChar(password,"ABCDEFGHIJKLMNOPQRSTUVWXYZ") &&
-    atLeastOneChar(password,"abcdefghijklmnopqrstuvwxyz") &&
-    atLeastOneChar(password,"1234567890") &&
-    atLeastOneChar(password,"!@#$%^&*()_+=`~;./][{}/\\?|\"") &&
-    password.length > 8
+  Some(password).filter((s) => atLeastOneChar(s,"ABCDEFGHIJKLMNOPQRSTUVWXYZ")).
+    filter((s) => atLeastOneChar(s,"abcdefghijklmnopqrstuvwxyz")).
+    filter((s) => atLeastOneChar(s,"1234567890")).
+    filter((s) => atLeastOneChar(s,"!@#$%^&*()_+=`~;./][{}/\\?|\"")).
+    filter((s) => s.length > 8) match {
+    case Some(x) => true
+    case _ => false
+  }
+
 }
 
